@@ -1,39 +1,38 @@
-from flask import Flask, request, jsonify
+import os
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
 from transformers import pipeline
 
-app = Flask(__name__)
+# Define request body
+class ChatRequest(BaseModel):
+    user_id: str
+    message: str
 
-# Load Hugging Face sentiment analyzer
-sentiment_analyzer = pipeline("sentiment-analysis")
+# Initialize FastAPI
+app = FastAPI()
 
-def get_response(user_input: str) -> str:
-    result = sentiment_analyzer(user_input)[0]
-    mood = result['label']
+# Load model once at startup
+# Using distilbert for sentiment analysis (lightweight)
+sentiment_analyzer = pipeline(
+    "sentiment-analysis",
+    model="distilbert/distilbert-base-uncased-finetuned-sst-2-english"
+)
 
-    if mood == "NEGATIVE":
-        return "I hear you. It sounds like you’re feeling low. Want to try a breathing exercise?"
-    elif mood == "POSITIVE":
-        return "That’s wonderful! Keep going, you’re doing amazing ✨"
-    else:
-        return "Thanks for sharing. Remember, I’m here to listen."
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json()
-    user_message = data.get("message", "")
-    reply = get_response(user_message)
-    return jsonify({"reply": reply})
-
-@app.route("/mood", methods=["POST"])
-def mood():
-    data = request.get_json()
-    user_message = data.get("message", "")
-    result = sentiment_analyzer(user_message)[0]
-    return jsonify({
-        "mood": result['label'],
-        "score": result['score']
-    })
-
+@app.post("/chat")
+def chat_endpoint(request: ChatRequest):
+    # Analyze sentiment
+    sentiment = sentiment_analyzer(request.message)[0]
+    return {
+        "user_id": request.user_id,
+        "message": request.message,
+        "sentiment": sentiment
+    }
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 8000))  # Render requires binding to $PORT
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=port)
